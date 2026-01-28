@@ -1,0 +1,197 @@
+===========================================================
+ADAPTIVE PYTHON PENTESTING FRAMEWORK
+===========================================================
+
+OVERVIEW
+--------
+This project is a modular, adaptive penetration testing framework written in Python.
+It is designed to assess intentionally vulnerable virtual machines in a controlled
+lab environment.
+
+The framework performs staged reconnaissance, service enumeration, and targeted
+vulnerability testing. Tests are dynamically selected based on discovered services,
+protocols, and software versions rather than running every test blindly.
+
+This design reduces noise, improves efficiency, and more closely mirrors real-world
+penetration testing workflows.
+
+
+PROJECT GOALS
+-------------
+- Identify network and application vulnerabilities on controlled targets
+- Dynamically adapt testing strategy based on discovered attack surface
+- Demonstrate ethical, permission-based penetration testing practices
+- Produce structured, professional reports for academic evaluation
+
+
+ETHICAL AND LEGAL DISCLAIMER
+----------------------------
+This tool is strictly for educational use.
+
+- Only test systems you own or have explicit permission to test
+- All testing is performed against locally hosted vulnerable virtual machines
+- Unauthorized use against external systems is illegal and unethical
+
+This project follows responsible disclosure and ethical hacking principles.
+
+
+HOW THE FRAMEWORK WORKS
+----------------------
+
+1. RECONNAISSANCE
+   - Identify live hosts
+   - Enumerate open ports and running services
+   - Detect service versions and protocols
+
+2. ANALYSIS AND DECISION ENGINE
+   - Map discovered services to applicable vulnerability tests
+   - Skip irrelevant or incompatible tests
+   - Prioritize high-risk findings
+
+3. TARGETED TESTING
+   - Network misconfiguration checks
+   - Authentication weakness testing
+   - Web application vulnerability checks
+   - Protocol-specific security testing
+
+4. REPORTING
+   - Colored terminal output with severity levels
+   - Structured JSON and CSV result exports
+   - Optional PDF report generation
+
+
+PROJECT STRUCTURE
+-----------------
+pentest-framework/
+│
+├── main.py                     Entry point
+├── requirements.txt            Python dependencies
+├── README.txt                  Project documentation
+│
+├── config/
+│   └── config.yaml             Scan configuration and profiles
+│
+├── core/
+│   ├── engine.py               Adaptive decision engine
+│   ├── scanner.py              Scan orchestration logic
+│   └── models.py               Data models and result objects
+│
+├── recon/
+│   ├── port_scan.py            TCP and UDP port scanning
+│   ├── dns_enum.py             DNS enumeration
+│   └── service_detect.py       Service fingerprinting
+│
+├── tests/
+│   ├── web_tests.py            Web vulnerability checks
+│   ├── auth_tests.py           Authentication testing
+│   ├── network_tests.py        Network vulnerability checks
+│   └── tls_tests.py            SSL and TLS configuration testing
+│
+├── reporting/
+│   ├── terminal.py             CLI output formatting
+│   ├── exporter.py             JSON and CSV export
+│   └── pdf_report.py           PDF report generation
+│
+└── utils/
+    ├── logger.py               Logging configuration
+    └── helpers.py              Shared utility functions
+
+
+DYNAMIC TEST SELECTION
+----------------------
+The framework does not execute all tests on every target.
+
+Instead:
+- Open ports determine which protocol tests run
+- Detected services determine applicable vulnerability checks
+- Service versions influence severity and prioritization
+- Web tests only run when HTTP or HTTPS is detected
+- Authentication tests only run on exposed login services
+
+This reduces unnecessary scanning and improves accuracy.
+
+
+SUPPORTED TESTING AREAS
+-----------------------
+- TCP and UDP port scanning
+- Service and version detection
+- Weak authentication detection
+- Web application vulnerability checks
+- TLS and certificate misconfiguration testing
+- DNS and network misconfiguration analysis
+
+
+REQUIREMENTS
+------------
+- Python 3.10 or newer
+- Root or administrator privileges for packet-level testing
+- Vulnerable virtual machines for testing
+
+Example targets:
+- Metasploitable2
+- DVWA
+- VulnHub machines
+- Custom intentionally vulnerable VMs
+
+
+INSTALLATION
+------------
+1. Clone the repository
+2. Create and activate a virtual environment
+3. Install dependencies using requirements.txt
+
+Example:
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+
+USAGE
+-----
+Basic scan:
+python main.py --target 192.168.56.101
+
+Adaptive scan mode:
+python main.py --target 192.168.56.101 --mode adaptive
+
+Export results:
+python main.py --target 192.168.56.101 --output json
+
+
+OUTPUT
+------
+Results are provided through:
+- Terminal output with severity indicators
+- JSON files for structured analysis
+- CSV files for summary review
+- Optional PDF reports for documentation
+
+
+TESTING AND VALIDATION
+----------------------
+Automated tests validate core scanning and analysis modules.
+Testing ensures:
+- Consistent results
+- Reduced false positives
+- Stable performance under concurrent scans
+
+
+ACADEMIC JUSTIFICATION
+----------------------
+This project demonstrates:
+- Secure coding practices
+- Modular software design
+- Ethical penetration testing methodology
+- Dynamic decision-making based on system discovery
+- Professional reporting and documentation
+
+
+AUTHORS
+-------
+Developed as an academic final project for a cybersecurity course.
+
+
+LICENSE
+-------
+Educational Use Only
+Unauthorized use against systems without permission is prohibited.
