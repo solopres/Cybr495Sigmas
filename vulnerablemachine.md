@@ -2,7 +2,7 @@
 
 We will be using a vulnerable machine geared torwards being attacked with metasploit as it would fit being a victim of the framework as well. 
 
-Download link: [http://sourceforge.net/projects/metasploitable/files/Metasploitable2/metasploitable-linux-2.0.0.zip/download]
+Download link: [Metasploitable](http://sourceforge.net/projects/metasploitable/files/Metasploitable2/metasploitable-linux-2.0.0.zip/download)
 
 How to download: 
 - Extract the files from the .zip
