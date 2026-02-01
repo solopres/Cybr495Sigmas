@@ -7,4 +7,4 @@ As such, the main aim of this project is to identify vulnerabilities based on th
 By focusing on these areas, This project hopes to make itself applicable to the medical field in assisting the prevention of future data breaches.
 
 ## Other Applications
-While this project will be heavily focused on application for medical systems, due to the nature of its functionaility, it will likely be made an effective tool for testing other networks and systems outside the mdeical field.
+While this project will be heavily focused on application for medical systems, due to the nature of its functionaility, it will likely be made an effective tool for testing other networks and systems outside the medical field.
