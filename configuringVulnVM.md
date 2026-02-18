@@ -1,7 +1,7 @@
-##Configuring the Metasploitable Virtual Machine to be *HIPAA-Compliant*
+## Configuring the Metasploitable Virtual Machine to be *HIPAA-Compliant*
   Purpose is to mimic the Medical Computer Systems environment.
 
-##Problem
+## Problem
   Must be HIPAA-compliant.
     However, we are constrained to our virtual machines and framework, so this naturally eliminates areas of HIPAA-compliance that are not appplicable, like: 
       - Finding an enterprise VPN for secure remote access.
@@ -11,7 +11,7 @@
       - Staff training and awareness.
       - Etc.
 
-##Solution
+## Solution
   Implement strong security controls that are widely applicable.
     Emulate what we can to get our test-target as compliant as possible within our constraints:
       - Data encryption, both in transit and at rest with AES-256.
