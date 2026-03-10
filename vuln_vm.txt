@@ -1,0 +1,58 @@
+This system demonstrates partial HIPAA Security RUle implementation (audit logging and role-based access control), but improper backup handling and credential exposure still lead to PHI compromise.
+
+
+
+Main security controls implemented:
+- Audit logging of PHI access (auditd)
+- Role-based access control (clinicians group)
+- Restricted PHI directory (/opt/patient_records)
+- Separate medical staff accounts
+- Root SSH login disabled
+
+
+
+Intentional vulnerabilies asside from Metasploitables:
+- PHI backup exposure
+    - Location: /opt/backups
+    - Contains permissions: drwxrwxrwx
+    - Attack path: attacker, scans filesystem, finds world-readable backup directory, reads patient records
+- Credential leakage in script
+    - Location: /usr/local/bin/backup_records.sh
+    - Contains: DB_USER=admin, DB_PASS=Hospital123
+    - Attack path: attacker reads script, harvests credentials, uses them for lateral movement
+- PHI pattern discovery
+    - Location: /opt/backups/patient_export.csv
+    - Contains: SSNs, DOB, diagnosis fields
+    - Attack path: automated scanner detects PHI patterns, identifies data breach risk
+
+
+
+To see it yourself:
+- Healthcare systems must log access to patient data.
+    Run:
+    sudo auditctl -l
+    - Should see dir=/opt/patient_records perm=rwxa key=patient_records
+    - This rule records any attempt to access patient records.
+- The main patient_records directory is protected, but hospitals often accidentally expose backup copies.
+    Run:
+    ls -ld /opt/backups
+    - should see drwxrwxrwx
+    - this means anyone on the system can access this directory.
+    Run:
+    cat /opt/backups/patient_export.csv
+    - should see the patient data.
+    - even though the secure directory is protected, a misconfigured backup exposes the same data.
+- Another common healthcare issue is credentials stored in scripts
+    Run: cat /usr/local/bin/backup_records.sh
+    - should see DB_USER=admin and DB_PASS=Hospital123
+    - An attacker could harvest these credentials and further access internal systems
+
+
+
+Commant list for ease of use:
+ls -ld /opt/patient_records
+ls /opt/patient_records
+sudo auditctl -l
+ls -ld /opt/backups
+cat /opt/backups/patient_export.csv
+cat /usr/local/bin/backup_records.sh
