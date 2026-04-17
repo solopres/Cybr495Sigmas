@@ -3,6 +3,7 @@ import asyncio
 import threading
 import queue
 import json
+import paramiko
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
@@ -125,7 +126,7 @@ def run_recon(cfg: ScanConfig) -> Dict[str, Any]:
             "https_title": t.https_title,
         })
 
-    # Inventory includes everything your decision engine might want:
+    # Inventory includes everything the decision engine might want:
     # - services with per-service risk_score
     # - per-host risk summary maps
     # - target enrichment
@@ -133,8 +134,6 @@ def run_recon(cfg: ScanConfig) -> Dict[str, Any]:
         "targets": result.targets,
         "target_info": targets_out,
         "services": services_out,
-
-        # NEW: host-level risk scoring for decision engine
         "host_risk_score": result.host_risk_score,
         "host_risk_reasons": result.host_risk_reasons,
     }
@@ -148,20 +147,62 @@ def run_decision_engine(inventory: Dict[str, Any]) -> List[Dict[str, Any]]:
       - inventory["host_risk_score"][host]
       - each svc["risk_score"]
     """
-    return []
+    findings = []
+    try:
+        for service in inventory["services"]:
+            if service["name"] == "ssh":
+                findings.append({
+                    "traversal": run_remote_python(service["host"],"msfadmin",
+                                  "msfadmin","dist/directoryTraverse")
+                })
+            elif service["name"] == "proftpd":
+                pass
+
+    except Exception as e:
+        print(e)
+    return findings
 
 
-def run_tests(selected_tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Execute selected tests.
-    """
-    return []
+def run_remote_python(host, user, password, script_path):
+    # Initialize the SSH client
+    ssh = paramiko.SSHClient()
+    # Automatically add the remote server's host key
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        # Connect to the server
+        ssh.connect(hostname=host, username=user, password=password)
+
+        sftp = ssh.open_sftp()
+        remote_path = script_path.split("/")[-1]
+        print(remote_path)
+        sftp.put(script_path, remote_path)
+
+        # --- CLOSE SFTP ---
+        sftp.close()
+        # Execute the command to run remote script
+        # --- MAKE EXECUTABLE ---
+        ssh.exec_command(f"chmod +x {remote_path}")
+
+        # --- RUN IT ---
+        stdin, stdout, stderr = ssh.exec_command(f"./{remote_path}")
+
+        # Read and decode the results
+        output = stdout.read().decode()
+        error = stderr.read().decode()
+
+        if error:
+            print(f"Error: {error}")
+        return json.loads(output)
+
+    finally:
+        ssh.close()
 
 
 def run_pipeline(cfg: ScanConfig) -> ReportBundle:
     inventory = run_recon(cfg)
     selected_tests = run_decision_engine(inventory)
-    findings = run_tests(selected_tests)
+    findings = run_decision_engine(inventory)
     return ReportBundle(inventory=inventory, selected_tests=selected_tests, findings=findings)
 
 
@@ -309,11 +350,15 @@ class ScannerGUI:
     def _worker_run_pipeline(self, cfg: ScanConfig):
         try:
             bundle = run_pipeline(cfg)
-            export_simple(bundle.inventory, "open_ports.json")
             inv = bundle.inventory
             services = inv.get("services", [])
             target_info = inv.get("target_info", [])
             host_scores = inv.get("host_risk_score", {}) or {}
+            findings = bundle.findings
+            traversal = []
+            for i in findings:
+                if "traversal" in i:
+                    traversal = i["traversal"]
 
             # Show target enrichment first (if any)
             if target_info:
@@ -360,6 +405,15 @@ class ScannerGUI:
                 line += f"  | Risk: {risk_str}"
                 self.log_q.put(line)
 
+            # Directory Traversal Results
+            lines = []
+            for file in traversal:
+                lines.append(f"[{file['risk']}] {file['file']}")
+                lines.append(f"  Score: {file['score']}")
+                lines.append(f"  Reasons: {', '.join(file['reasons'])}")
+                lines.append("")  # spacing
+
+            self.log_q.put("\n".join(lines))
             self.log_q.put("\nDone.")
         except Exception as e:
             self.log_q.put(f"\nERROR: {type(e).__name__}: {e}")
