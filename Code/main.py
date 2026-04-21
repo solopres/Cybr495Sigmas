@@ -153,7 +153,7 @@ def run_decision_engine(inventory: Dict[str, Any]) -> List[Dict[str, Any]]:
             if service["name"] == "ssh":
                 findings.append({
                     "traversal": run_remote_python(service["host"],"msfadmin",
-                                  "msfadmin","dist/directoryTraverse")
+                                  "msfadmin","traversalpython2")
                 })
             elif service["name"] == "proftpd":
                 pass
@@ -175,7 +175,6 @@ def run_remote_python(host, user, password, script_path):
 
         sftp = ssh.open_sftp()
         remote_path = script_path.split("/")[-1]
-        print(remote_path)
         sftp.put(script_path, remote_path)
 
         # --- CLOSE SFTP ---
