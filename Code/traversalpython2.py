@@ -1,7 +1,10 @@
 import os
 import re
 import stat
-import json
+try:
+	import json
+except ImportError:
+	import simplejson as json
 
 KEYWORDS = {
     "patient": 2,
@@ -107,7 +110,7 @@ def scan(root_dir):
         score, reasons = result
         level = classify(score)
 
-        if level != "LOW":
+        if level != "LOW" and score > MEDIUM_RISK_THRESHOLD:
             item = {
                 "file": path,
                 "risk": level,
@@ -115,10 +118,9 @@ def scan(root_dir):
                 "reasons": list(set(reasons))
             }
             results.append(item)
-            print(item)
 
     print(json.dumps(results))
 
 
 if __name__ == "__main__":
-    scan("/home")
+    scan("/")
