@@ -3,12 +3,20 @@ import asyncio
 import threading
 import queue
 import json
+import os
+import webbrowser
 import paramiko
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+try:
+    from report_generator import generate_report
+    REPORT_AVAILABLE = True
+except ImportError:
+    REPORT_AVAILABLE = False
 
 # recon_services now returns ReconResult (not List[Service])
 from reconnaissance import recon_services, ReconResult
@@ -213,7 +221,7 @@ class ScannerGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Recon Scanner (GUI)")
-        self.root.geometry("900x650")
+        self.root.geometry("900x950")
 
         self.log_q: "queue.Queue[str]" = queue.Queue()
         self.worker_thread: Optional[threading.Thread] = None
@@ -256,6 +264,93 @@ class ScannerGUI:
 
         self.clear_btn = ttk.Button(btns, text="Clear Log", command=self.clear_log)
         self.clear_btn.pack(side="left", padx=8)
+
+        self.report_btn = ttk.Button(btns, text="Generate PDF Report", command=self.on_generate_report,
+                                     state="disabled")
+        self.report_btn.pack(side="left", padx=8)
+
+        self._last_inventory: Optional[Dict[str, Any]] = None
+
+        # --- SSH Terminal Panel
+        ssh_frm = ttk.LabelFrame(root, text="SSH Terminal", padding=10)
+        ssh_frm.pack(fill="x", padx=12, pady=(0, 8))
+
+        ttk.Label(ssh_frm, text="Host:").grid(row=0, column=0, sticky="w")
+        self.ssh_host_var = tk.StringVar(value="45.33.32.156")
+        ttk.Entry(ssh_frm, textvariable=self.ssh_host_var, width=18).grid(row=0, column=1, sticky="w", padx=(4, 12))
+
+        ttk.Label(ssh_frm, text="User:").grid(row=0, column=2, sticky="w")
+        self.ssh_user_var = tk.StringVar(value="msfadmin")
+        ttk.Entry(ssh_frm, textvariable=self.ssh_user_var, width=14).grid(row=0, column=3, sticky="w", padx=(4, 12))
+
+        ttk.Label(ssh_frm, text="Password:").grid(row=0, column=4, sticky="w")
+        self.ssh_pass_var = tk.StringVar(value="msfadmin")
+        ttk.Entry(ssh_frm, textvariable=self.ssh_pass_var, width=14, show="*").grid(row=0, column=5, sticky="w", padx=(4, 12))
+
+        self.ssh_connect_btn = ttk.Button(ssh_frm, text="Connect", command=self.on_ssh_connect)
+        self.ssh_connect_btn.grid(row=0, column=6, sticky="w", padx=(4, 0))
+
+        self.ssh_disconnect_btn = ttk.Button(ssh_frm, text="Disconnect", command=self.on_ssh_disconnect, state="disabled")
+        self.ssh_disconnect_btn.grid(row=0, column=7, sticky="w", padx=(4, 0))
+
+        self.ssh_status_var = tk.StringVar(value="Not connected")
+        ttk.Label(ssh_frm, textvariable=self.ssh_status_var, foreground="gray").grid(row=0, column=8, sticky="w", padx=(12, 0))
+
+        # Terminal output box
+        self.term_box = tk.Text(ssh_frm, height=12, bg="black", fg="lime green",
+                                insertbackground="lime green", font=("Courier", 10), wrap="word")
+        self.term_box.grid(row=1, column=0, columnspan=9, sticky="nsew", pady=(8, 4))
+        self.term_box.config(state="disabled")
+
+        term_scroll = ttk.Scrollbar(ssh_frm, orient="vertical", command=self.term_box.yview)
+        term_scroll.grid(row=1, column=9, sticky="ns", pady=(8, 4))
+        self.term_box.configure(yscrollcommand=term_scroll.set)
+
+        # Command input row
+        self.cmd_prompt_var = tk.StringVar(value="$")
+        ttk.Label(ssh_frm, textvariable=self.cmd_prompt_var,
+                  font=("Courier", 10), foreground="lime green").grid(row=2, column=0, sticky="w")
+
+        self.ssh_cmd_var = tk.StringVar()
+        self.cmd_entry = ttk.Entry(ssh_frm, textvariable=self.ssh_cmd_var, width=70, font=("Courier", 10))
+        self.cmd_entry.grid(row=2, column=1, columnspan=7, sticky="we", padx=(4, 4))
+        self.cmd_entry.bind("<Return>", lambda e: self.on_ssh_exec())
+        self.cmd_entry.bind("<Up>", self._history_up)
+        self.cmd_entry.bind("<Down>", self._history_down)
+        self.cmd_entry.config(state="disabled")
+
+        self.ssh_btn = ttk.Button(ssh_frm, text="Send", command=self.on_ssh_exec, state="disabled")
+        self.ssh_btn.grid(row=2, column=8, sticky="w")
+
+        # Quick-access preset buttons
+        presets_frm = ttk.Frame(ssh_frm)
+        presets_frm.grid(row=3, column=0, columnspan=9, sticky="w", pady=(6, 0))
+
+        ttk.Label(presets_frm, text="Quick:").pack(side="left")
+        presets = [
+            ("whoami",   "whoami"),
+            ("id",       "id"),
+            ("uname -a", "uname -a"),
+            ("ifconfig", "ifconfig"),
+            ("ls",       "ls"),
+            ("ls /home", "ls /home"),
+            ("ps aux",   "ps aux"),
+            ("pwd",      "pwd"),
+        ]
+        for label, cmd in presets:
+            ttk.Button(
+                presets_frm, text=label,
+                command=lambda c=cmd: self._set_and_run_ssh(c)
+            ).pack(side="left", padx=3)
+
+        ssh_frm.columnconfigure(1, weight=1)
+
+        # SSH persistent state
+        self._ssh_client: Optional[paramiko.SSHClient] = None
+        self._ssh_channel = None
+        self._ssh_cwd: str = "~"
+        self._cmd_history: List[str] = []
+        self._history_idx: int = -1
 
         # --- Log output
         out = ttk.Frame(root, padding=(12, 0, 12, 12))
@@ -350,6 +445,7 @@ class ScannerGUI:
         try:
             bundle = run_pipeline(cfg)
             inv = bundle.inventory
+            self._last_inventory = inv
             services = inv.get("services", [])
             target_info = inv.get("target_info", [])
             host_scores = inv.get("host_risk_score", {}) or {}
@@ -414,10 +510,167 @@ class ScannerGUI:
 
             self.log_q.put("\n".join(lines))
             self.log_q.put("\nDone.")
+            if REPORT_AVAILABLE:
+                self.root.after(0, lambda: self.report_btn.config(state="normal"))
         except Exception as e:
             self.log_q.put(f"\nERROR: {type(e).__name__}: {e}")
         finally:
             self.root.after(0, lambda: self.run_btn.config(state="normal"))
+
+
+    def _term_write(self, text: str):
+        """Append text to the terminal box (thread-safe via after)."""
+        def _do():
+            self.term_box.config(state="normal")
+            self.term_box.insert("end", text)
+            self.term_box.see("end")
+            self.term_box.config(state="disabled")
+        self.root.after(0, _do)
+
+    def on_ssh_connect(self):
+        host = self.ssh_host_var.get().strip()
+        user = self.ssh_user_var.get().strip()
+        password = self.ssh_pass_var.get().strip()
+
+        if not host:
+            messagebox.showerror("Input error", "Host is required.")
+            return
+
+        self.ssh_connect_btn.config(state="disabled")
+        self.ssh_status_var.set("Connecting...")
+
+        def _connect():
+            try:
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client.connect(hostname=host, username=user, password=password, timeout=10)
+
+                # Open a persistent interactive shell channel
+                channel = client.invoke_shell(term="xterm", width=200, height=50)
+                channel.settimeout(0.0)
+
+                self._ssh_client = client
+                self._ssh_channel = channel
+
+                self.root.after(0, self._on_connected, user, host)
+
+                # Start reader thread
+                threading.Thread(target=self._ssh_reader, daemon=True).start()
+
+            except Exception as e:
+                self.root.after(0, self._on_connect_failed, str(e))
+
+        threading.Thread(target=_connect, daemon=True).start()
+
+    def _on_connected(self, user: str, host: str):
+        self.ssh_status_var.set(f"Connected: {user}@{host}")
+        self.ssh_connect_btn.config(state="disabled")
+        self.ssh_disconnect_btn.config(state="normal")
+        self.cmd_entry.config(state="normal")
+        self.ssh_btn.config(state="normal")
+        self.cmd_entry.focus()
+        self._term_write(f"Connected to {user}@{host}\r\n")
+
+    def _on_connect_failed(self, err: str):
+        self.ssh_status_var.set("Not connected")
+        self.ssh_connect_btn.config(state="normal")
+        messagebox.showerror("SSH Error", f"Could not connect:\n{err}")
+
+    def on_ssh_disconnect(self):
+        if self._ssh_channel:
+            try:
+                self._ssh_channel.close()
+            except Exception:
+                pass
+        if self._ssh_client:
+            try:
+                self._ssh_client.close()
+            except Exception:
+                pass
+        self._ssh_channel = None
+        self._ssh_client = None
+        self.ssh_status_var.set("Not connected")
+        self.ssh_connect_btn.config(state="normal")
+        self.ssh_disconnect_btn.config(state="disabled")
+        self.cmd_entry.config(state="disabled")
+        self.ssh_btn.config(state="disabled")
+        self._term_write("\r\n[Disconnected]\r\n")
+
+    def _ssh_reader(self):
+        """Background thread: reads output from the persistent shell channel."""
+        import time
+        while self._ssh_channel and not self._ssh_channel.closed:
+            try:
+                if self._ssh_channel.recv_ready():
+                    data = self._ssh_channel.recv(4096).decode("utf-8", errors="replace")
+                    self._term_write(data)
+                else:
+                    time.sleep(0.05)
+            except Exception:
+                break
+        self._term_write("\r\n[Session ended]\r\n")
+
+    def on_generate_report(self):
+        if not REPORT_AVAILABLE:
+            messagebox.showerror("Missing module", "report_generator.py not found.")
+            return
+        if not self._last_inventory:
+            messagebox.showwarning("No data", "Run a scan first to generate a report.")
+            return
+
+        self.report_btn.config(state="disabled")
+        self.log_q.put("\nGenerating PDF report...")
+
+        def _worker():
+            try:
+                path = os.path.abspath("recon_report.pdf")
+                generate_report(self._last_inventory, output_path=path)
+                self.log_q.put(f"Report saved: {path}")
+                # Open in browser
+                webbrowser.open(f"file:///{path.replace(os.sep, '/')}")
+            except Exception as e:
+                self.log_q.put(f"[Report error] {type(e).__name__}: {e}")
+            finally:
+                self.root.after(0, lambda: self.report_btn.config(state="normal"))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _set_and_run_ssh(self, cmd: str):
+        self.ssh_cmd_var.set(cmd)
+        self.on_ssh_exec()
+
+    def on_ssh_exec(self):
+        if not self._ssh_channel or self._ssh_channel.closed:
+            messagebox.showwarning("Not connected", "Connect to a host first.")
+            return
+
+        cmd = self.ssh_cmd_var.get()
+        self.ssh_cmd_var.set("")
+
+        # Save to history
+        if cmd.strip():
+            self._cmd_history.append(cmd)
+            self._history_idx = len(self._cmd_history)
+
+        # Send command to the persistent shell
+        self._ssh_channel.send(cmd + "\n")
+
+    def _history_up(self, event):
+        if not self._cmd_history:
+            return
+        self._history_idx = max(0, self._history_idx - 1)
+        self.ssh_cmd_var.set(self._cmd_history[self._history_idx])
+        self.cmd_entry.icursor("end")
+
+    def _history_down(self, event):
+        if not self._cmd_history:
+            return
+        self._history_idx = min(len(self._cmd_history), self._history_idx + 1)
+        if self._history_idx == len(self._cmd_history):
+            self.ssh_cmd_var.set("")
+        else:
+            self.ssh_cmd_var.set(self._cmd_history[self._history_idx])
+        self.cmd_entry.icursor("end")
 
 
 def launch_gui():
